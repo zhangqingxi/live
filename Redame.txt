@@ -1,0 +1,123 @@
+#nginx配置
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream swoole {
+    # Connect IP:Port
+    server 127.0.0.1:9501 weight=5 max_fails=3 fail_timeout=30s;
+    keepalive 16;
+}
+
+server {
+    listen 80;
+	listen 443 ssl http2;
+    server_name live.zhangqingxi.cn;
+    index index.php index.html index.htm default.php default.htm default.html;
+    root /www/wwwroot/live.zhangqingxi.cn/public;
+     
+    #SSL-START SSL相关配置，请勿删除或修改下一行带注释的404规则
+    #error_page 404/404.html;
+    #HTTP_TO_HTTPS_START
+    if ($server_port !~ 443){
+        rewrite ^(/.*)$ https://$host$1 permanent;
+    }
+    #HTTP_TO_HTTPS_END
+    ssl_certificate    /www/server/panel/vhost/cert/live.zhangqingxi.cn/fullchain.pem;
+    ssl_certificate_key    /www/server/panel/vhost/cert/live.zhangqingxi.cn/privkey.pem;
+    ssl_protocols TLSv1.1 TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:HIGH:!aNULL:!MD5:!RC4:!DHE;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    error_page 497  https://$host$request_uri;
+
+    #SSL-END
+    
+    # Nginx 处理静态资源，LaravelS 处理动态资源
+    location / {
+        try_files $uri @laravels;
+    }
+    
+    #禁止访问的文件或目录
+    location ~ ^/(\.user.ini|\.htaccess|\.git|\.svn|\.project|LICENSE|README.md)
+    {
+       return 404;
+    }
+
+    #一键申请SSL证书验证目录相关设置
+    location ~ \.well-known{
+       allow all;
+    }
+
+    location ~ .*\.(gif|jpg|jpeg|png|bmp|swf)$
+    {
+       expires      30d;
+        error_log off;
+        access_log /dev/null;
+    }
+
+    location ~ .*\.(js|css)?$
+    {
+        expires      12h;
+        error_log off;
+        access_log /dev/null;
+    }
+    access_log  /www/wwwlogs/live.zhangqingxi.cn.log;
+    error_log  /www/wwwlogs/live.zhangqingxi.cn.error.log;
+ 
+    # Http和WebSocket共存，Nginx通过location区分
+    # !!! WebSocket连接时路径为/ws
+    # Javascript: var ws = new WebSocket("ws://laravels.com/ws");
+    location =/ws {
+        # proxy_connect_timeout 60s;
+        # proxy_send_timeout 60s;
+        # proxy_read_timeout：如果60秒内被代理的服务器没有响应数据给Nginx，那么Nginx会关闭当前连接；同时，Swoole的心跳设置也会影响连接的关闭
+        # proxy_read_timeout 60s;
+        proxy_http_version 1.1;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Real-PORT $remote_port;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header Scheme $scheme;
+        proxy_set_header Server-Protocol $server_protocol;
+        proxy_set_header Server-Name $server_name;
+        proxy_set_header Server-Addr $server_addr;
+        proxy_set_header Server-Port $server_port;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_pass https://swoole;
+    }
+    location @laravels {
+        # proxy_connect_timeout 60s;
+        # proxy_send_timeout 60s;
+        # proxy_read_timeout 60s;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Real-PORT $remote_port;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Host $http_host;
+        proxy_set_header Scheme $scheme;
+        proxy_set_header Server-Protocol $server_protocol;
+        proxy_set_header Server-Name $server_name;
+        proxy_set_header Server-Addr $server_addr;
+        proxy_set_header Server-Port $server_port;
+        proxy_pass https://swoole;
+    }
+}
+
+#env配置
+LARAVELS_LISTEN_IP=127.0.0.1
+LARAVELS_DAEMONIZE=true
+
+
+
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_PREFIX=live_
+DB_DATABASE=live
+DB_USERNAME=live
+DB_PASSWORD=F44pWBXzXnzBc7ar
